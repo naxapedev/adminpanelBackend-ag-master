@@ -331,76 +331,18 @@ export const deleteUser = async (req: Request, res: Response) => {
   let connection;
   const ip = getSystemIp(req);
   try {
-    const { user_id } = req.params; // target user to delete
-    const { deleted_by } = req.body; // actor performing the action
-
-    if (!deleted_by) {
-      return res
-        .status(400)
-        .json({ success: false, message: "deleted_by is required" });
-    }
+    const { user_id } = req.params;
 
     connection = await db.getConnection();
+    const [userRows]: any = await db.execute(`SELECT * FROM users WHERE user_id = ? AND is_deleted = 0`,[user_id]);
 
-    // Get actor (the one trying to delete)
-    const [actorRows]: any = await db.execute(
-      `SELECT user_id, role FROM users WHERE user_id = ? AND is_deleted = 0`,
-      [deleted_by]
-    );
-
-    if (actorRows.length === 0) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Actor user not found" });
-    }
-
-    const actor = actorRows[0];
-
-    // Get target user (the one being deleted)
-    const [userRows]: any = await db.execute(
-      `SELECT * FROM users WHERE user_id = ? AND is_deleted = 0`,
-      [user_id]
-    );
-
-    if (userRows.length === 0) {
-      return res
-        .status(404)
-        .json({ success: false, message: "User not found" });
-    }
-
+    if (userRows.length === 0) {return res.status(404).json({ success: false, message: "User not found" });}
     const userToDelete = userRows[0];
-    console.log(actor.role);
 
-    // Role-based permission check
-    if (actor.role === "superadmin") {
-      // allowed to delete anyone
-    } else if (actor.role === "admin") {
-      if (userToDelete.role === "superadmin") {
-        return res.status(403).json({
-          success: false,
-          message: "Admins cannot delete superadmins",
-        });
-      }
-    } else {
-      return res.status(403).json({
-        success: false,
-        message: "You do not have permission to delete users",
-      });
-    }
+    // Perform soft delete.
+    const [result]: any = await db.execute(`UPDATE users SET is_deleted = 1, updated_date = NOW() WHERE user_id = ?`,[user_id]);
+    if (result.affectedRows === 0) {return res.status(404).json({ success: false, message: "User not found" });}
 
-    // Perform soft delete
-    const [result]: any = await db.execute(
-      `UPDATE users SET is_deleted = 1, updated_by = ?, updated_date = NOW() WHERE user_id = ?`,
-      [deleted_by, user_id]
-    );
-
-    if (result.affectedRows === 0) {
-      return res
-        .status(404)
-        .json({ success: false, message: "User not found" });
-    }
-
-    // Parse lab_id for response
     if (userToDelete.lab_id) {
       try {
         userToDelete.lab_id = JSON.parse(userToDelete.lab_id);
@@ -411,24 +353,18 @@ export const deleteUser = async (req: Request, res: Response) => {
       userToDelete.lab_id = [];
     }
 
-    // Log the deletion action
-    await LogController.logDeletion("users", userToDelete, deleted_by, ip);
+    // Log the deletion action (you can still log with user_id only)
+    await LogController.logDeletion("users", userToDelete, Number(user_id), ip);
 
-    res.json({
-      success: true,
-      message: "User deleted successfully (soft delete)",
-      data: userToDelete,
-    });
+    res.json({success: true,message: "User deleted successfully (soft delete)",data: userToDelete,});
   } catch (error: any) {
-    await handleError("deleting", "users", error, req.body.deleted_by, req.ip, {
-      userId: req.params.id,
-      ...req.body,
-    });
+    await handleError("deleting","users",error,Number(req.params.user_id),req.ip,{ userId: req.params.user_id });
     res.status(500).json({ success: false, message: "Internal server error" });
   } finally {
     if (connection) connection.release();
   }
 };
+
 
 export const getUsers = async (req: Request, res: Response) => {
   const ip = getSystemIp(req);
