@@ -91,41 +91,10 @@ export const updateUser = async (req: Request, res: Response) => {
     const { user_id } = req.params;
     const {
       // users table
-      first_name,
-      last_name,
-      email,
-      phone,
-      time_zone,
-      role,
-      territory,
-      password,
-      lab_id,
-      is_active,
-      is_agreed,
-      actorUserId,
+      first_name, last_name, email, phone, time_zone, role, territory, password, lab_id, is_active, is_agreed, actorUserId,
 
       // user_data table
-      email2,
-      scndPhone,
-      address1,
-      city,
-      state1,
-      zip,
-      ship_address1,
-      ship_address2,
-      ship_city,
-      ship_state,
-      ship_zip,
-      nickName,
-      ssn,
-      DOB,
-      emp_type,
-      hire_date,
-      term_date,
-      emergency_name,
-      emergency_phone,
-      relationship,
-      comment,
+      email2, scndPhone, address1, city, state1, zip, ship_address1, ship_address2, ship_city, ship_state, ship_zip, nickName, ssn, DOB, emp_type, hire_date, term_date, emergency_name, emergency_phone, relationship, comment,
     } = req.body;
 
     connection = await db.getConnection();
@@ -344,11 +313,7 @@ export const updateUser = async (req: Request, res: Response) => {
         ip
       );
 
-      res.json({
-        success: true,
-        message: "User updated successfully",
-        data: updatedUser,
-      });
+      res.json({ success: true, message: "User updated successfully", data: updatedUser,});
     } catch (err) {
       await connection.rollback();
       throw err;
