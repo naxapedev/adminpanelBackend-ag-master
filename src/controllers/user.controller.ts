@@ -788,6 +788,7 @@ export const getUserById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
+    // Fetch from users
     const [userRows]: any = await db.execute(
       `SELECT * FROM users WHERE user_id = ? AND is_deleted = 0`,
       [id]
@@ -801,20 +802,49 @@ export const getUserById = async (req: Request, res: Response) => {
 
     const user = userRows[0];
 
-    // Parse lab_id for response
+    // Fetch from user_data
+    const [userDataRows]: any = await db.execute(
+      `SELECT * FROM user_data WHERE user_id = ?`,
+      [id]
+    );
+
+    const userData = userDataRows.length > 0 ? userDataRows[0] : {};
+
+    // Parse lab_id into array
+    let labIds: number[] = [];
     if (user.lab_id) {
       try {
-        user.lab_id = JSON.parse(user.lab_id);
+        labIds = JSON.parse(user.lab_id);
+        if (!Array.isArray(labIds)) {
+          labIds = [labIds];
+        }
       } catch {
-        user.lab_id = [user.lab_id];
+        labIds = [user.lab_id];
       }
-    } else {
-      user.lab_id = [];
     }
+
+    // Fetch lab details if labIds exist
+    let labs: any[] = [];
+    if (labIds.length > 0) {
+      const [labRows]: any = await db.query(
+        `SELECT lab_id, lab_name
+         FROM labs 
+         WHERE lab_id IN (${labIds.map(() => "?").join(",")}) AND is_deleted = 0`,
+        labIds
+      );
+      labs = labRows;
+    }
+
+    // Merge everything
+    const fullUser = {
+      ...user,
+      ...userData,
+      labs, // resolved labs info
+    };
 
     res.json({
       success: true,
-      data: user,
+      data: fullUser,
     });
   } catch (error: any) {
     await handleError("fetching", "user", error, req.body.user_id, req.ip, {
