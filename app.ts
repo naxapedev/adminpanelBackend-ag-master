@@ -14,7 +14,7 @@ import userRoutes from "./src/routes/user.routes.js"
 import clinicRoutes from "./src/routes/clinic.routes.js"
 import routeRoutes from "./src/routes/routes.routes.js";
 import driverRoutes from "./src/routes/driver.routes.js"
-
+import willCallRoutes from "./src/routes/willCall.routes.js"
 
 // Load environment variables
 dotenv.config();
@@ -41,7 +41,7 @@ app.use("/api/delivery", deliveryRoutes);
 app.use("/api/clinics", clinicRoutes);
 app.use("/api/routes", routeRoutes);
 app.use("/api/drivers", driverRoutes)
-
+app.use("/api/willcall", willCallRoutes)
 
 // Health check endpoint
 app.get('/health', async (req, res) => {

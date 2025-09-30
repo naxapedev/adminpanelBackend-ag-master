@@ -12,7 +12,7 @@ const logSchema = new Schema(
     module: {
       type: String,
       required: true,
-      enum: ['state', 'territories', 'labs', 'delivery', 'clinics', 'users', 'auth', 'routes', 'driver']
+      enum: ['state', 'territories', 'labs', 'delivery', 'clinics', 'users', 'auth', 'routes', 'driver', 'will_call']
     },
     payload: Object,
     ip: String,
