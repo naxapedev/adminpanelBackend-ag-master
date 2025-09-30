@@ -42,20 +42,7 @@ export const createUser = async (req: Request, res: Response) => {
           first_name, last_name, email, phone, time_zone, role, territory, 
           password, lab_id, created_by, updated_by, created_date, updated_date, is_active
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?)`,
-        [
-          first_name || null,
-          last_name || null,
-          email || null,
-          phone || null,
-          time_zone || null,
-          rolesValue,
-          territory || null,
-          hashedPassword,
-          labIdsValue,
-          created_by || null,
-          created_by || null,
-          is_active ?? 1,
-        ]
+        [ first_name || null, last_name || null, email || null, phone || null, time_zone || null, rolesValue, territory || null, hashedPassword, labIdsValue, created_by || null, created_by || null, is_active ?? 1,]
       );
 
       const userId = result.insertId;
@@ -68,31 +55,7 @@ export const createUser = async (req: Request, res: Response) => {
           nickName, ssn, DOB, emp_type, hire_date, term_date,
           emergency_name, emergency_phone, relationship, comment
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          userId.toString(),
-          email || null,
-          email2 || null,
-          scndPhone || null,
-          address1 || null,
-          city || null,
-          state1 || null,
-          zip || null,
-          ship_address1 || null,
-          ship_address2 || null,
-          ship_city || null,
-          ship_state || null,
-          ship_zip || null,
-          nickName || null,
-          ssn || null,
-          DOB || null,
-          emp_type || null,
-          hire_date || null,
-          term_date || null,
-          emergency_name || null,
-          emergency_phone || null,
-          relationship || null,
-          comment || null,
-        ]
+        [ userId.toString(), email || null, email2 || null, scndPhone || null, address1 || null, city || null, state1 || null, zip || null, ship_address1 || null, ship_address2 || null, ship_city || null, ship_state || null, ship_zip || null, nickName || null, ssn || null, DOB || null, emp_type || null, hire_date || null, term_date || null, emergency_name || null, emergency_phone || null, relationship || null, comment || null,]
       );
 
       await connection.commit();
@@ -116,131 +79,6 @@ export const createUser = async (req: Request, res: Response) => {
   }
 };
 
-
-
-
-// export const createUser = async (req: Request, res: Response) => {
-//   let connection;
-//   const ip = getSystemIp(req);
-
-//   try {
-//     const {
-//       // Users table fields
-//       first_name, last_name, email, phone, time_zone, role, territory, password, lab_id, created_by, is_active = 1,
-
-//       // User_data table fields
-//       email2, scndPhone, address1, city, state1, zip, ship_address1, ship_address2, ship_city, ship_state, ship_zip, nickName, ssn, DOB, emp_type, hire_date, term_date, emergency_name, emergency_phone, relationship, comment
-//     } = req.body;
-
-//     // Validate role
-//     let roles: string[] = [];
-//     if (Array.isArray(role)) {
-//       roles = role;
-//     } else if (typeof role === "string") {
-//       roles = [role];
-//     } else {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Role must be a string or an array of strings",
-//       });
-//     }
-
-//     const validRoles = Object.values(USER_ROLES) as string[];
-//     const invalidRoles = roles.filter((r) => !validRoles.includes(r));
-
-//     if (invalidRoles.length > 0) {
-//       return res.status(400).json({
-//         success: false,
-//         message: `Invalid role(s): ${invalidRoles.join(
-//           ", "
-//         )}. Must be one of: ${validRoles.join(", ")}`,
-//       });
-//     }
-
-//     const rolesValue = JSON.stringify(roles);
-//     connection = await db.getConnection();
-//     const [existingUsers]: any = await db.execute(`SELECT user_id FROM users WHERE email = ? AND is_deleted = 0`,[email]);
-//     if (existingUsers.length > 0) {return res.status(409).json({ success: false, message: "User with this email already exists"});}
-
-//     // Handle and validate lab_id(s)
-//     let labIds: number[] = [];
-//     if (lab_id) {
-//       if (Array.isArray(lab_id)) {
-//         labIds = lab_id.map((id) => Number(id));
-//       } else if (typeof lab_id === "string") {
-//         try {
-//           labIds = JSON.parse(lab_id).map((id: any) => Number(id));
-//         } catch {
-//           labIds = [Number(lab_id)];
-//         }
-//       }
-//     }
-
-//     if (labIds.length > 0) {
-//       const [validLabs]: any = await db.execute(`SELECT lab_id FROM labs WHERE lab_id IN (${labIds.map(() => "?").join(",")})`,labIds);
-//       const foundLabIds = validLabs.map((row: any) => row.lab_id);
-//       const invalidIds = labIds.filter((id) => !foundLabIds.includes(id));
-
-//       if (invalidIds.length > 0) {
-//         return res.status(400).json({success: false,message: `Invalid lab_id(s): ${invalidIds.join(", ")}`,});
-//       }
-//     }
-
-//     const labIdsValue = labIds.length > 0 ? JSON.stringify(labIds) : null;
-
-//     const saltRounds = 10;
-//     const hashedPassword = await bcrypt.hash(password, saltRounds);
-
-//     // Start transaction for both tables
-//     await connection.beginTransaction();
-
-//     try {
-//       // Insert into users table
-//       const [result]: any = await connection.execute(
-//         `INSERT INTO users (
-//           first_name, last_name, email, phone, time_zone, role, territory, 
-//           password, lab_id, created_by, updated_by, created_date, updated_date, is_active
-//         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?)`,
-//         [ first_name, last_name, email, phone || null, time_zone || null, rolesValue, territory || null, hashedPassword, labIdsValue, created_by, created_by, is_active,
-//         ]
-//       );
-
-//       const userId = result.insertId;
-
-//       // Insert into user_data table
-//       await connection.execute(
-//         `INSERT INTO user_data (
-//           user_id, email, email2, scndPhone, address1, city, state1, zip,
-//           ship_address1, ship_address2, ship_city, ship_state, ship_zip,
-//           nickName, ssn, DOB, emp_type, hire_date, term_date,
-//           emergency_name, emergency_phone, relationship, comment
-//         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-//         [ userId.toString(), email, email2 || null, scndPhone || null, address1 || null, city || null, state1 || null, zip || null, ship_address1 || null, ship_address2 || null, ship_city || null, ship_state || null, ship_zip || null, nickName || null, ssn || null, DOB || null, emp_type || null, hire_date || null, term_date || null, emergency_name || null, emergency_phone || null, relationship || null, comment || null]
-//       );
-
-//       // Commit transaction
-//       await connection.commit();
-
-//       const newUser = { user_id: userId, first_name, last_name, email, phone, time_zone, role: roles, territory, lab_id: labIds, created_by, is_active, is_agreed: 0, is_deleted: 0, created_date: new Date(), updated_date: new Date(),};
-
-//       // Log the creation action
-//       await LogController.logCreation("users", newUser, created_by, ip);
-
-//       res.status(201).json({ success: true, message: "User created successfully", data: {user_id: userId}});
-
-//     } catch (error) {
-//       // Rollback transaction if any error occurs
-//       await connection.rollback();
-//       throw error;
-//     }
-
-//   } catch (error: any) {
-//     await handleError( "creating", "users", error, req.body.created_by, ip, req.body);
-//     res.status(500).json({ success: false, message: "Internal server error" });
-//   } finally {
-//     if (connection) connection.release();
-//   }
-// };
 
 export const updateUser = async (req: Request, res: Response) => {
   let connection;
