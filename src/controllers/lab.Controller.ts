@@ -159,6 +159,25 @@ export const getAllLabs = async (req: Request, res: Response) => {
   }
 };
 
+export const getAllActiveLabs = async (req: Request, res: Response) => {
+  try {
+    const db = DatabaseService.getInstance();
+    const mysql = db.mysqlConnection;
+
+    const [rows] = await mysql.query<(Lab & RowDataPacket)[]>(
+      `SELECT 
+        lab_id,
+        lab_name
+      FROM labs
+      WHERE is_deleted = FALSE  AND is_active = TRUE`
+    );
+
+    res.json(rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 
 // ✅ Update Lab (partial updates)
 export const updateLab = async (req: Request, res: Response) => {

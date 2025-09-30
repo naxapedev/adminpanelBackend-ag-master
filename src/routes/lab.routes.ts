@@ -6,6 +6,7 @@ import {
   updateLab,
   deleteLab,
   getLabsByTerritoryIdDropdown,
+  getAllActiveLabs,
 } from "../controllers/lab.Controller.js";
 
 const router = Router();
@@ -15,6 +16,7 @@ router.post("/", createLab);
 
 // ✅ Get all labs (summary)
 router.get("/", getAllLabs);
+router.get("/active/dropdown", getAllActiveLabs);
 router.get("/dropdown/:id", getLabsByTerritoryIdDropdown);
 
 // ✅ Get lab by id (details)
