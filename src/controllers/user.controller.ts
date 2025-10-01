@@ -455,7 +455,7 @@ export const getUsers = async (req: Request, res: Response) => {
     labs.forEach((lab: any) => {
       labMap[lab.lab_id] = lab.lab_name;
     });
-    console.log("🔹 Lab map:", labMap);
+    // console.log("🔹 Lab map:", labMap);
 
     const usersWithLabs = users.map((user: any) => {
       if (user.lab_id) {
