@@ -102,75 +102,75 @@ export const updateUser = async (req: Request, res: Response) => {
     // -------------------------------
     // Step 1: Verify actor
     // -------------------------------
-    console.log("🟢 LOG | Actor ID:", actorUserId);
-    const [actorRows]: any = await connection.execute(
-      `SELECT user_id, role FROM users WHERE user_id = ? AND is_deleted = 0`,
-      [actorUserId]
-    );
-    if (!actorRows.length) {
-      return res
-        .status(403)
-        .json({ success: false, message: "Unauthorized user" });
-    }
+//     console.log("🟢 LOG | Actor ID:", actorUserId);
+//     const [actorRows]: any = await connection.execute(
+//       `SELECT user_id, role FROM users WHERE user_id = ? AND is_deleted = 0`,
+//       [actorUserId]
+//     );
+//     if (!actorRows.length) {
+//       return res
+//         .status(403)
+//         .json({ success: false, message: "Unauthorized user" });
+//     }
 
-   const actorRoleRaw = actorRows[0].role;
-let actorRoles: string[] = [];
+//    const actorRoleRaw = actorRows[0].role;
+// let actorRoles: string[] = [];
 
-try {
-  actorRoles = JSON.parse(actorRoleRaw); // if stored as JSON string
-} catch {
-  actorRoles = Array.isArray(actorRoleRaw) ? actorRoleRaw : [actorRoleRaw];
-}
+// try {
+//   actorRoles = JSON.parse(actorRoleRaw); // if stored as JSON string
+// } catch {
+//   actorRoles = Array.isArray(actorRoleRaw) ? actorRoleRaw : [actorRoleRaw];
+// }
 
-console.log("🟢 LOG | Actor Roles Parsed:", actorRoles);
+// console.log("🟢 LOG | Actor Roles Parsed:", actorRoles);
 
-    // Only admin or superadmin can update
-    if ((!actorRoles.includes("admin") && !actorRoles.includes("superadmin"))) {
-      return res
-        .status(403)
-        .json({ success: false, message: "You are not allowed to update users" });
-    }
+//     // Only admin or superadmin can update
+//     if ((!actorRoles.includes("admin") && !actorRoles.includes("superadmin"))) {
+//       return res
+//         .status(403)
+//         .json({ success: false, message: "You are not allowed to update users" });
+//     }
 
     // -------------------------------
     // Step 2: Validate lab_id(s)
     // -------------------------------
-    console.log("🟢 LOG | Raw lab_id from body:", lab_id);
-    let labIds: number[] = [];
-    if (lab_id) {
-      if (Array.isArray(lab_id)) {
-        labIds = lab_id.map((id) => Number(id));
-      } else if (typeof lab_id === "string") {
-        try {
-          labIds = JSON.parse(lab_id).map((id: any) => Number(id));
-        } catch {
-          labIds = [Number(lab_id)];
-        }
-      }
-    }
-    console.log("🟢 LOG | Parsed labIds:", labIds);
+    // console.log("🟢 LOG | Raw lab_id from body:", lab_id);
+    // let labIds: number[] = [];
+    // if (lab_id) {
+    //   if (Array.isArray(lab_id)) {
+    //     labIds = lab_id.map((id) => Number(id));
+    //   } else if (typeof lab_id === "string") {
+    //     try {
+    //       labIds = JSON.parse(lab_id).map((id: any) => Number(id));
+    //     } catch {
+    //       labIds = [Number(lab_id)];
+    //     }
+    //   }
+    // }
+    // console.log("🟢 LOG | Parsed labIds:", labIds);
 
-    if (labIds.length > 0) {
-      const [validLabs]: any = await connection.execute(
-        `SELECT lab_id FROM labs WHERE lab_id IN (${labIds
-          .map(() => "?")
-          .join(",")}) AND is_deleted = 0`,
-        labIds
-      );
-      console.log("🟢 LOG | Valid labs:", validLabs);
+    // if (labIds.length > 0) {
+    //   const [validLabs]: any = await connection.execute(
+    //     `SELECT lab_id FROM labs WHERE lab_id IN (${labIds
+    //       .map(() => "?")
+    //       .join(",")}) AND is_deleted = 0`,
+    //     labIds
+    //   );
+    //   console.log("🟢 LOG | Valid labs:", validLabs);
 
-      const foundLabIds = validLabs.map((row: any) => row.lab_id);
-      const invalidIds = labIds.filter((id) => !foundLabIds.includes(id));
+    //   const foundLabIds = validLabs.map((row: any) => row.lab_id);
+    //   const invalidIds = labIds.filter((id) => !foundLabIds.includes(id));
 
-      if (invalidIds.length > 0) {
-        return res.status(400).json({
-          success: false,
-          message: `Invalid lab_id(s): ${invalidIds.join(", ")}`,
-        });
-      }
-    }
+    //   if (invalidIds.length > 0) {
+    //     return res.status(400).json({
+    //       success: false,
+    //       message: `Invalid lab_id(s): ${invalidIds.join(", ")}`,
+    //     });
+    //   }
+    // }
 
-    const labIdsValue = labIds.length > 0 ? JSON.stringify(labIds) : null;
-    console.log("🟢 LOG | labIdsValue for DB:", labIdsValue);
+    // const labIdsValue = labIds.length > 0 ? JSON.stringify(labIds) : null;
+    // console.log("🟢 LOG | labIdsValue for DB:", labIdsValue);
 
     // -------------------------------
     // Step 3: Hash password if provided
@@ -214,9 +214,9 @@ console.log("🟢 LOG | Actor Roles Parsed:", actorRoles);
         setUserField("role", JSON.stringify(rolesArray));
       }
 
-      if (lab_id !== undefined) {
-        setUserField("lab_id", labIdsValue);
-      }
+      // if (lab_id !== undefined) {
+      //   setUserField("lab_id", labIdsValue);
+      // }
 
       if (hashedPassword) {
         setUserField("password", hashedPassword);
