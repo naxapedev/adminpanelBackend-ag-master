@@ -120,6 +120,7 @@ export const createWillCall = async (req: Request, res: Response) => {
         pickup_clinic_id,
         nextJobNum,
         pickup_facility,
+        
         pickup_address,
         pickup_address2 || '',
         pickup_city,
@@ -343,12 +344,31 @@ export const getWillCallById = async (req: Request, res: Response) => {
       [orderId]
     );
 
+    // New tables
+    const [driverCoordinates]: any = await db.execute(
+      `SELECT * FROM driver_coordinates WHERE order_id = ?`,
+      [orderId]
+    );
+
+    const [willcallTime]: any = await db.execute(
+      `SELECT * FROM willcalltime WHERE willcall_id = ?`,
+      [id]
+    );
+
+    const [willcallComments]: any = await db.execute(
+      `SELECT * FROM willcall_comment WHERE order_id = ?`,
+      [orderId]
+    );
+
     const responseData = {
       ...willCall[0],
       pickup_customer: pickupCustomer[0] || null,
       delivery_location: deliveryLocat[0] || null,
       delivery_person: deliveryPerson[0] || null,
-      routing: routing[0] || null
+      routing: routing[0] || null,
+      driver_coordinates: driverCoordinates.length ? driverCoordinates : [],
+      willcall_time: willcallTime.length ? willcallTime : [],
+      willcall_comments: willcallComments.length ? willcallComments : []
     };
 
     res.json({
@@ -362,7 +382,62 @@ export const getWillCallById = async (req: Request, res: Response) => {
   }
 };
 
-export const updateWillCallStatus = async (req: Request, res: Response) => {
+export const getWillCallStatusData = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Get will call basic info
+    const [willCall]: any = await db.execute(
+      `SELECT order_id, status, driver, willcall_type FROM will_call WHERE order_id = ?`,
+      [id]
+    );
+
+    if (willCall.length === 0) {
+      return res.status(404).json({ success: false, message: "Will Call not found" });
+    }
+
+    // Get willcalltime data
+    const [willCallTime]: any = await db.execute(
+      `SELECT pickuptime, deliveredtime FROM willcalltime WHERE willcall_id = ?`,
+      [id]
+    );
+
+    // Get driver_coordinates data
+    const [driverCoordinates]: any = await db.execute(
+      `SELECT pickup_name, bags_count, pickup_comment, ship_method, trackingId FROM driver_coordinates WHERE order_id = ?`,
+      [id]
+    );
+
+    const responseData = {
+      order_id: parseInt(id),
+      status: willCall[0].status,
+      driver_id: willCall[0].driver,
+      willcall_type: willCall[0].willcall_type,
+      
+      // Pickup data
+      pickup_time: willCallTime[0]?.pickuptime || null,
+      pickup_name: driverCoordinates[0]?.pickup_name || null,
+      bags_count: driverCoordinates[0]?.bags_count || null,
+      pickup_comment: driverCoordinates[0]?.pickup_comment || null,
+      
+      // Completion data
+      completion_time: willCallTime[0]?.deliveredtime || null,
+      shipping_method: driverCoordinates[0]?.ship_method || null,
+      tracking_ids: driverCoordinates[0]?.trackingId || null
+    };
+
+    res.json({
+      success: true,
+      data: responseData
+    });
+
+  } catch (error: any) {
+    console.error("Error fetching will call status data:", error);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+export const updateWillCallStatusData = async (req: Request, res: Response) => {
   let connection;
   const ip = getSystemIp(req);
   try {
@@ -634,61 +709,6 @@ export const updateWillCallStatus = async (req: Request, res: Response) => {
   }
 };
 
-export const getWillCallStatusData = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-
-    // Get will call basic info
-    const [willCall]: any = await db.execute(
-      `SELECT order_id, status, driver, willcall_type FROM will_call WHERE order_id = ?`,
-      [id]
-    );
-
-    if (willCall.length === 0) {
-      return res.status(404).json({ success: false, message: "Will Call not found" });
-    }
-
-    // Get willcalltime data
-    const [willCallTime]: any = await db.execute(
-      `SELECT pickuptime, deliveredtime FROM willcalltime WHERE willcall_id = ?`,
-      [id]
-    );
-
-    // Get driver_coordinates data
-    const [driverCoordinates]: any = await db.execute(
-      `SELECT pickup_name, bags_count, pickup_comment, ship_method, trackingId FROM driver_coordinates WHERE order_id = ?`,
-      [id]
-    );
-
-    const responseData = {
-      order_id: parseInt(id),
-      status: willCall[0].status,
-      driver_id: willCall[0].driver,
-      willcall_type: willCall[0].willcall_type,
-      
-      // Pickup data
-      pickup_time: willCallTime[0]?.pickuptime || null,
-      pickup_name: driverCoordinates[0]?.pickup_name || null,
-      bags_count: driverCoordinates[0]?.bags_count || null,
-      pickup_comment: driverCoordinates[0]?.pickup_comment || null,
-      
-      // Completion data
-      completion_time: willCallTime[0]?.deliveredtime || null,
-      shipping_method: driverCoordinates[0]?.ship_method || null,
-      tracking_ids: driverCoordinates[0]?.trackingId || null
-    };
-
-    res.json({
-      success: true,
-      data: responseData
-    });
-
-  } catch (error: any) {
-    console.error("Error fetching will call status data:", error);
-    res.status(500).json({ success: false, message: "Internal server error" });
-  }
-};
-
 export const assignDriverToWillCall = async (req: Request, res: Response) => {
   let connection;
   const ip = getSystemIp(req);
@@ -753,4 +773,260 @@ export const assignDriverToWillCall = async (req: Request, res: Response) => {
   } finally {
     if (connection) connection.release();
   }
+};
+
+export const deleteWillCall = async (req: Request, res: Response) => {
+  const ip = getSystemIp(req);
+
+  try {
+    const { id } = req.params;
+    const {userId} = req.body || null; // or from auth middleware
+
+    // 1. Fetch record
+    const [willCall]: any = await db.execute(
+      `SELECT * FROM will_call WHERE order_id = ? AND is_deleted = 0`,
+      [id]
+    );
+
+    if (willCall.length === 0) {
+      return res.status(404).json({ success: false, message: "Will Call not found" });
+    }
+
+    const existingData = willCall[0];
+
+    // 2. Soft delete
+    await db.execute(
+      `UPDATE will_call 
+       SET is_deleted = 1, updated_date = NOW(), updated_by = ? 
+       WHERE order_id = ?`,
+      [userId, id]
+    );
+
+    // 3. Log deletion
+    await LogController.logDeletion("WillCall", existingData, userId, ip);
+
+    res.json({
+      success: true,
+      message: "Will Call deleted successfully (soft delete)",
+    });
+  } catch (error: any) {
+    await handleError("delete", "WillCall", error, req.body.userId || null, req.ip, {
+      willCallId: req.params.id,
+    });
+
+    res.status(500).json({
+      success: false,
+      message: "Internal server error while deleting will call",
+    });
+  }
+};
+
+export const addWillCallComment = async (req: Request, res: Response) => {
+  const ip = getSystemIp(req);
+  try {
+    const { order_id, comment } = req.body;
+    const userId = req.body.userId || null;
+
+    if (!order_id || !comment) {
+      return res.status(400).json({ success: false, message: "order_id and comment are required" });
+    }
+
+    // Insert comment
+    const [result]: any = await db.execute(
+      `INSERT INTO willcall_comment (order_id, comment) VALUES (?, ?)`,
+      [order_id, comment]
+    );
+
+    const newComment = {
+      commentid: result.insertId,
+      order_id,
+      comment,
+    };
+
+    // Log creation
+    await LogController.logCreation("WillCallComment", newComment, userId, ip);
+
+    res.json({
+      success: true,
+      message: "Comment added successfully",
+      data: newComment,
+    });
+  } catch (error: any) {
+    await handleError("create", "WillCallComment", error, req.body.userId || null, ip, req.body);
+    res.status(500).json({ success: false, message: "Internal server error while adding comment" });
+  }
+};
+
+export const deleteWillCallComment = async (req: Request, res: Response) => {
+  const ip = getSystemIp(req);
+  try {
+    const { order_id } = req.params;
+    const userId = req.body.userId || null;
+
+    // Fetch existing comment
+    const [existing]: any = await db.execute(
+      `SELECT * FROM willcall_comment WHERE commentid = ?`,
+      [order_id]
+    );
+
+    if (existing.length === 0) {
+      return res.status(404).json({ success: false, message: "Comment not found" });
+    }
+
+    const commentData = existing[0];
+
+    // Delete comment
+    await db.execute(`DELETE FROM willcall_comment WHERE order_id = ?`, [order_id]);
+
+    // Log deletion
+    await LogController.logDeletion("WillCallComment", commentData, userId, ip);
+
+    res.json({
+      success: true,
+      message: "Comment deleted successfully",
+    });
+  } catch (error: any) {
+    await handleError("delete", "WillCallComment", error, req.body.userId || null, ip, {
+      commentid: req.params.commentid,
+    });
+    res.status(500).json({ success: false, message: "Internal server error while deleting comment" });
+  }
+};
+
+export const getWillCalls = async (req: Request, res: Response) => {
+  try {
+    const {
+      status,
+      jobnum,
+      labs,
+      driver,
+      deliveryPoint,
+      territory,
+      limit = 50,
+      offset = 0,
+    } = req.query;
+
+    const conditions: string[] = ["wc.is_deleted = 0"];
+    const params: any[] = [];
+
+    if (status && status !== "all") {
+      if (status === "Not Assigned") {
+        conditions.push("(wc.driver IS NULL OR wc.driver = '')");
+      } else {
+        conditions.push("wc.status = ?");
+        params.push(status);
+      }
+    }
+
+    if (jobnum) {
+      conditions.push("wc.job_num LIKE ?");
+      params.push(`%${jobnum}%`);
+    }
+
+    if (labs && labs !== "all") {
+      conditions.push("wc.lab_id = ?");
+      params.push(labs);
+    }
+
+    if (driver && driver !== "all") {
+      conditions.push("wc.driver = ?");
+      params.push(driver);
+    }
+
+    // Territory filter - filters will_call by matching clinicId to clinics.territory_id
+    if (territory && territory !== "all") {
+      conditions.push("c.territory_id = ?");
+      params.push(territory);
+    }
+
+    // Delivery point filter with EXISTS to avoid duplicates
+    if (deliveryPoint && deliveryPoint !== "all") {
+      conditions.push(`EXISTS (
+        SELECT 1 FROM delivery_locat dl 
+        WHERE dl.order_id = wc.order_id 
+        AND dl.delivery_address = ?
+      )`);
+      params.push(deliveryPoint);
+    }
+
+    const whereSQL = conditions.length ? conditions.join(" AND ") : "1=1";
+
+    const sql = `
+      SELECT DISTINCT
+        wc.*,
+        c.territory_id,
+        CONCAT(u.first_name, ' ', u.last_name) AS driver_name,
+        u.phone AS driver_phone,
+        l.lab_name
+      FROM will_call wc
+      LEFT JOIN clinics c ON wc.clinicId = c.ClinicId
+      LEFT JOIN users u ON wc.driver = u.user_id
+      LEFT JOIN labs l ON l.lab_id = wc.lab_id
+      WHERE ${whereSQL}
+      ORDER BY wc.job_num DESC
+      LIMIT ? OFFSET ?
+    `;
+    params.push(Number(limit), Number(offset));
+
+    const [rows]: any = await db.execute(sql, params);
+
+    const dataResult = [];
+    for (const willCall of rows) {
+      const delivery = await fetchSingleRow(
+        "SELECT * FROM delivery_locat WHERE order_id = ? LIMIT 1",
+        [willCall.order_id]
+      );
+      
+      const pickup = await fetchSingleRow(
+        "SELECT * FROM pickup_customer WHERE order_id = ?",
+        [willCall.order_id]
+      );
+      
+      const labsName = await getLabsNameById(willCall.lab_id);
+
+      dataResult.push({
+        orderid: willCall.order_id,
+        clinicId: willCall.clinicId,
+        jobnum: willCall.job_num,
+        willcalldate: willCall.willcall_date,
+        created_date: willCall.created_date,
+        pickup_facility: willCall.pickup_facility,
+        pick_address: willCall.pick_address,
+        pick_state: willCall.pick_state,
+        labs: willCall.lab_id,
+        labs_name: labsName,
+        status: willCall.status,
+        unseen: willCall.unseen,
+        deliveryfacility: delivery?.delivery_facility || "",
+        deliveryaddress: delivery?.delivery_address || "",
+        drivername: willCall.driver_name || "",
+        driverphone: willCall.driver_phone || "",
+        territoryId: willCall.territory_id || "", // Now correctly from clinics table
+        quantities: pickup?.quantities || 1,
+        is_routed: willCall.is_routed,
+      });
+    }
+
+    res.json(dataResult);
+  } catch (error: any) {
+    await handleError("fetch", "will_call", error, req.body.userId || null, req.ip, {
+      query: req.query,
+    });
+    res
+      .status(500)
+      .json({ success: false, message: "Internal server error while fetching will calls" });
+  }
+};
+
+// Utility: fetch one row
+const fetchSingleRow = async (query: string, params: any[] = []) => {
+  const [rows]: any = await db.execute(query, params);
+  return rows && rows.length > 0 ? rows[0] : {};
+};
+
+// Utility: get lab name
+const getLabsNameById = async (labsId: number) => {
+  if (!labsId) return "";
+  const row = await fetchSingleRow("SELECT lab_name FROM labs WHERE lab_id = ?", [labsId]);
+  return row?.lab_name || "";
 };

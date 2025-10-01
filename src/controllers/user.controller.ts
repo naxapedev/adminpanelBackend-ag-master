@@ -335,11 +335,19 @@ export const updateUser = async (req: Request, res: Response) => {
         .json({ success: false, message: "Unauthorized user" });
     }
 
-    const actorRole = actorRows[0].role;
-    console.log("🟢 LOG | Actor Role:", actorRole);
+    const actorRoleRaw = actorRows[0].role;
+    let actorRoles: string[] = [];
+
+    try {
+      actorRoles = JSON.parse(actorRoleRaw); // if stored as JSON string
+    } catch {
+      actorRoles = Array.isArray(actorRoleRaw) ? actorRoleRaw : [actorRoleRaw];
+    }
+
+    console.log("🟢 LOG | Actor Roles Parsed:", actorRoles);
 
     // Only admin or superadmin can update
-    if (actorRole !== "admin" && actorRole !== "superadmin") {
+    if ((!actorRoles.includes("admin") && !actorRoles.includes("superadmin"))) {
       return res
         .status(403)
         .json({ success: false, message: "You are not allowed to update users" });
@@ -551,7 +559,6 @@ export const updateUser = async (req: Request, res: Response) => {
     if (connection) connection.release();
   }
 };
-
 
 export const deleteUser = async (req: Request, res: Response) => {
   let connection;
