@@ -2,7 +2,7 @@
 import Log from "../models/mongodb/logModel.js";
 
 interface ILogData {
-  action: "create" | "update" | "delete" | "error";
+  action: "auth" | "create" | "update" | "delete" | "error";
   module: string;
   userId?: number;
   ip?: string;

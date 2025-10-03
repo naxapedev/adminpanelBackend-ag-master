@@ -1,85 +1,85 @@
-import { Request, Response, NextFunction } from 'express';
-import { TokenService } from '../controllers/tokenServices.js';
-import { AuthService } from '../controllers/authService.js';
+import { Request, Response, NextFunction } from "express";
+import jwt, { JwtPayload } from "jsonwebtoken";
+import { DatabaseService } from "../config/database.js";
+
+// Get DB instance
+const db = DatabaseService.getInstance().mysqlConnection;
+
+// Extend Express Request type to include `user`
+declare global {
+  namespace Express {
+    interface Request {
+      user?: any; // you can define a proper User type instead of `any`
+    }
+  }
+}
 
 export const authMiddleware = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const authHeader = req.headers.authorization;
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'Access token required' 
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({
+        success: false,
+        message: "Access token required",
       });
     }
 
-    const token = authHeader.split(' ')[1];
+    const token = authHeader.split(" ")[1];
 
-    if (!token) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'Invalid token format' 
+    // Verify token
+    const decoded = jwt.verify(
+      token,
+      process.env.ACCESS_TOKEN_SECRET as string
+    ) as JwtPayload;
+
+    // Check if user still exists and is active
+    const [users]: any = await db.execute(
+      `SELECT user_id, first_name, last_name, email, role, is_active, is_deleted 
+       FROM users WHERE user_id = ? AND is_deleted = 0 AND is_active = 1`,
+      [decoded.id]
+    );
+
+    if (users.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: "User no longer exists or account is inactive",
       });
     }
 
-    // Verify access token
-    const payload = TokenService.verifyAccessToken(token);
+    const user = users[0];
+
+    try {
+      if (typeof user.role === "string") {
+        user.role = JSON.parse(user.role);
+      }
+    } catch {
+      user.role = [user.role];
+    }
+
+    req.user = user; // ✅ now recognized
+    console.log("from the middleware",user);
     
-    // Validate user exists and is active
-    const authService = new AuthService();
-    const user = await authService.validateUser(payload.userId);
-
-    if (!user) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'User not found or inactive' 
-      });
-    }
-
-    // Attach user to request
-    req.user = {
-      ...payload,
-      ...user
-    };
-
     next();
-  } catch (error) {
-    console.error('Auth middleware error:', error);
-    
-    if (error instanceof Error) {
-      if (error.name === 'TokenExpiredError') {
-        return res.status(401).json({ 
-          success: false, 
-          error: 'Token expired' 
-        });
-      }
-      if (error.name === 'JsonWebTokenError') {
-        return res.status(401).json({ 
-          success: false, 
-          error: 'Invalid token' 
-        });
-      }
+  } catch (err: any) {
+    if (err.name === "TokenExpiredError") {
+      return res.status(401).json({
+        success: false,
+        message: "Token expired",
+      });
     }
 
-    return res.status(401).json({ 
-      success: false, 
-      error: 'Authentication failed' 
+    if (err.name === "JsonWebTokenError") {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid token",
+      });
+    }
+
+    console.error("Auth middleware error:", err);
+    res.status(500).json({
+      success: false,
+      message: "Authentication error",
     });
   }
 };
-
-// Extend Express Request type
-declare global {
-  namespace Express {
-    interface Request {
-      user?: {
-        userId: number;
-        email: string;
-        role: string;
-        first_name: string;
-        last_name: string;
-        is_active: boolean;
-      };
-    }
-  }
-}

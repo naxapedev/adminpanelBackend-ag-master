@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
+import cookieParser from 'cookie-parser';
 
 import { DatabaseService } from './src/config/database.js';
 import authRoutes from './src/routes/auth.js';
@@ -10,10 +11,10 @@ import territoryRouter from "./src/routes/territory.routes.js";
 import stateRoutes from "./src/routes/state.routes.js";
 import labsRoutes from "./src/routes/lab.routes.js";
 import deliveryRoutes from "./src/routes/delivery.routes.js";
-import userRoutes from "./src/routes/user.routes.js"
-import clinicRoutes from "./src/routes/clinic.routes.js"
+import userRoutes from "./src/routes/user.routes.js";
+import clinicRoutes from "./src/routes/clinic.routes.js";
 import routeRoutes from "./src/routes/routes.routes.js";
-import driverRoutes from "./src/routes/driver.routes.js"
+import driverRoutes from "./src/routes/driver.routes.js";
 
 
 // Load environment variables
@@ -24,9 +25,10 @@ const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(helmet());
-app.use(cors());
+app.use(cors({origin: "http://localhost:5173", credentials: true}));
 app.use(morgan('combined'));
 app.use(express.json());
+app.use(cookieParser());
 
 // Database connection
 const databaseService = DatabaseService.getInstance();
@@ -40,7 +42,11 @@ app.use("/api/labs", labsRoutes);
 app.use("/api/delivery", deliveryRoutes);
 app.use("/api/clinics", clinicRoutes);
 app.use("/api/routes", routeRoutes);
+// app.use("/api/routesheet", routesheetRoutes);
+// app.use("/api/support", supportRoutes);
 app.use("/api/drivers", driverRoutes)
+// app.use("/api/willcall", willCallRoutes)
+
 
 
 // Health check endpoint

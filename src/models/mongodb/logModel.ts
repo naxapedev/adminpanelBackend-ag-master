@@ -7,12 +7,12 @@ const logSchema = new Schema(
     action: {
       type: String,
       required: true,
-      enum: ['create', 'update', 'delete', 'error']
+      enum: [ 'auth', 'create', 'update', 'delete', 'error']
     },
     module: {
       type: String,
       required: true,
-      enum: ['state', 'territories', 'labs', 'delivery', 'clinics', 'users', 'auth', 'routes', 'driver']
+      enum: ['state', 'territories', 'labs', 'delivery', 'clinics', 'users', 'auth', 'routes' ,'route report', 'routesheet' , 'routesheets', 'routes', 'temporary routes', 'routesheetdate', 'routesheetdropoff', 'support' , 'getRouteClinicSchedule', 'driver', 'will_call', 'login', 'logout']
     },
     payload: Object,
     ip: String,
@@ -22,6 +22,18 @@ const logSchema = new Schema(
   },
   { timestamps: true }
 );
+
+
+// action: {
+//       type: String,
+//       required: true,
+//       enum: ['auth', 'create', 'update', 'delete', 'error']
+//     },
+//     module: {
+//       type: String,
+//       required: true,
+//       enum: ['state', 'territories', 'labs', 'delivery', 'clinics', 'users', 'auth', 'routes', 'driver', 'will_call', 'login', 'logout']
+//     },
 
 // Index for better query performance
 logSchema.index({ module: 1, action: 1 });

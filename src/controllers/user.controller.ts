@@ -3,6 +3,9 @@ import { DatabaseService } from "../config/database.js";
 import { LogController } from "./log.controller.js";
 import { getSystemIp, handleError } from "../lib/utils.js";
 import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import crypto from "crypto";
+
 // Get DB instance
 const db = DatabaseService.getInstance().mysqlConnection;
 
@@ -14,6 +17,54 @@ export const USER_ROLES = {
   DISPATCHER: "dispatcher",
   MANAGER: "manager",
 } as const;
+
+const generateAccessToken = (user: any) => {
+  const payload = {
+    id: user.user_id,
+    email: user.email,
+    fullName: `${user.first_name} ${user.last_name}`,
+    role: user.role,
+  };
+console.log("ACCESS_TOKEN_SECRET:", process.env.ACCESS_TOKEN_SECRET);
+
+  return jwt.sign(
+    payload,
+    process.env.ACCESS_TOKEN_SECRET as string,
+    { expiresIn: (process.env.ACCESS_TOKEN_EXPIRY || "15m") as any }
+  );
+};
+
+const generateRefreshToken = (user: any) => {
+  const payload = {
+    id: user.user_id,
+    email: user.email,
+  };
+console.log("ACCESS_TOKEN_SECRET:", process.env.ACCESS_TOKEN_SECRET);
+console.log("REFRESH_TOKEN_SECRET:", process.env.REFRESH_TOKEN_SECRET);
+  return jwt.sign(
+    payload,
+    process.env.REFRESH_TOKEN_SECRET as string,
+    { expiresIn: (process.env.REFRESH_TOKEN_EXPIRY || "7d") as any }
+  );
+};
+
+const storeRefreshToken = async (userId: number, token: string, deviceInfo: any = null) => {
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+  // First, invalidate any existing tokens for this user
+  await db.execute(
+    "UPDATE refresh_tokens SET is_revoked = TRUE WHERE user_id = ?",
+    [userId]
+  );
+
+  // Store the new token with device info
+  await db.execute(
+    `INSERT INTO refresh_tokens (user_id, token_hash, expires_at, issued_at, device_info) 
+     VALUES (?, ?, ?, NOW(), ?)`,
+    [userId, tokenHash, expiresAt, JSON.stringify(deviceInfo)]
+  );
+};
 
 export const createUser = async (req: Request, res: Response) => {
   let connection;
@@ -573,5 +624,334 @@ export const getUserById = async (req: Request, res: Response) => {
       userId: req.params.id,
     });
     res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+export const loginUser = async (req: Request, res: Response) => {
+  const ip = getSystemIp(req);
+  const { email, password, deviceInfo } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({
+      success: false,
+      message: "Email and password are required",
+    });
+  }
+
+  try {
+    // Get user
+    const [users]: any = await db.execute(
+      `SELECT user_id, first_name, last_name, email, password, role,
+              is_active, is_deleted, phone, time_zone, territory,
+              login_attempts, lock_until
+       FROM users 
+       WHERE email = ? AND is_deleted = 0`,
+      [email]
+    );
+
+    if (users.length === 0) {
+      await LogController.logError("auth", "login", new Error("Invalid email"), undefined, ip, { email });
+      return res.status(401).json({ success: false, message: "Invalid credentials" });
+    }
+
+    const user = users[0];
+
+    // Check lock_until (temporary lock)
+    if (user.lock_until && new Date(user.lock_until) > new Date()) {
+      return res.status(403).json({
+        success: false,
+        message: "Too many failed attempts. Try again later."
+      });
+    }
+
+    // Check active status
+    if (!user.is_active) {
+      await LogController.logError("auth", "login", new Error("Inactive account"), user.user_id, ip, { email });
+      return res.status(403).json({ success: false, message: "Account is inactive. Please contact support." });
+    }
+
+    // Verify password
+    const isMatch = await bcrypt.compare(password, user.password);
+
+    if (!isMatch) {
+      const attempts = user.login_attempts + 1;
+
+      if (attempts >= 5) {
+        // Lock for 5 minutes
+        const lockUntil = new Date(Date.now() + 5 * 60 * 1000); // 5 mins
+        await db.execute(
+          `UPDATE users SET login_attempts = 0, lock_until = ? WHERE user_id = ?`,
+          [lockUntil, user.user_id]
+        );
+        await LogController.logError("auth", "login", new Error("Too many attempts - locked"), user.user_id, ip, { email });
+        return res.status(403).json({
+          success: false,
+          message: "Too many failed login attempts. Account locked for 5 minutes.",
+        });
+      } else {
+        // Increase attempts
+        await db.execute(`UPDATE users SET login_attempts = ? WHERE user_id = ?`, [attempts, user.user_id]);
+      }
+
+      await LogController.logError("auth", "login", new Error("Invalid password"), user.user_id, ip, { email });
+      return res.status(401).json({ success: false, message: "Invalid credentials" });
+    }
+
+    // ✅ If login successful, reset attempts + unlock
+    await db.execute(
+      `UPDATE users SET login_attempts = 0, lock_until = NULL WHERE user_id = ?`,
+      [user.user_id]
+    );
+
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
+
+    await storeRefreshToken(user.user_id, refreshToken, deviceInfo);
+
+    // Parse role
+    let userRole = user.role;
+    try {
+      if (typeof user.role === "string") {
+        userRole = JSON.parse(user.role);
+      }
+    } catch {
+      userRole = [user.role];
+    }
+
+    const userResponse = {
+      id: user.user_id,
+      email: user.email,
+      first_name: user.first_name,
+      last_name: user.last_name,
+      full_name: `${user.first_name} ${user.last_name}`,
+      role: userRole,
+      phone: user.phone,
+      time_zone: user.time_zone,
+      territory: user.territory,
+    };
+
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    await LogController.createLog({
+      action: "auth",
+      module: "login",
+      userId: user.user_id,
+      ip,
+      payload: { email: user.email, deviceInfo },
+      message: "User logged in successfully",
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Login successful",
+      user: userResponse,
+      tokens: {
+        accessToken,
+        expiresIn: process.env.ACCESS_TOKEN_EXPIRY || 900,
+      },
+    });
+  } catch (err: any) {
+    console.error("Login Error:", err.message);
+    await LogController.logError("auth", "login", err, undefined, ip, { email });
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+// Refresh token endpoint
+export const refreshToken = async (req: Request, res: Response) => {
+  const ip = getSystemIp(req);
+  
+  try {
+    // Get refresh token from cookie or body (cookie takes precedence for web)
+    const refreshToken = req.cookies?.refreshToken;
+
+    if (!refreshToken) {
+      return res.status(401).json({
+        success: false,
+        message: "Refresh token required",
+      });
+    }
+
+    // Verify refresh token
+    const decoded: any = jwt.verify(
+      refreshToken,
+      process.env.REFRESH_TOKEN_SECRET!
+    );
+
+    // Check if refresh token exists in database and is not revoked
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(refreshToken)
+      .digest("hex");
+    
+    const [tokens]: any = await db.execute(
+      `SELECT rt.*, u.is_active, u.is_deleted
+       FROM refresh_tokens rt 
+       JOIN users u ON rt.user_id = u.user_id 
+       WHERE rt.token_hash = ? AND rt.is_revoked = FALSE AND rt.expires_at > NOW()`,
+      [tokenHash]
+    );
+
+    if (tokens.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid or expired refresh token",
+      });
+    }
+
+    const storedToken = tokens[0];
+
+    // Check if user is active and not deleted
+    if (storedToken.is_deleted || !storedToken.is_active) {
+      return res.status(401).json({
+        success: false,
+        message: "User account is inactive or deleted",
+      });
+    }
+
+    // Get user details
+    const [users]: any = await db.execute(
+      `SELECT user_id, first_name, last_name, email, role 
+       FROM users WHERE user_id = ? AND is_deleted = 0 AND is_active = 1`,
+      [decoded.id]
+    );
+
+    if (users.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: "User no longer exists",
+      });
+    }
+
+    const user = users[0];
+
+    // Generate new tokens
+    const newAccessToken = generateAccessToken(user);
+    const newRefreshToken = generateRefreshToken(user);
+
+    // Replace old refresh token with new one
+    await storeRefreshToken(
+      user.user_id,
+      newRefreshToken,
+      storedToken.device_info ? JSON.parse(storedToken.device_info) : null
+    );
+
+    // Set new refresh token as HTTP-only cookie
+    res.cookie('refreshToken', newRefreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+
+    // Log token refresh
+    await LogController.createLog({
+      action: "auth",
+      module: "login",
+      userId: user.user_id,
+      ip: ip,
+      message: "Access token refreshed successfully"
+    });
+
+    // Return response with new access token
+    res.status(200).json({
+      success: true,
+      message: "Token refreshed successfully",
+      tokens: {
+        accessToken: newAccessToken,
+        expiresIn: process.env.ACCESS_TOKEN_EXPIRY || 900,
+      },
+    });
+
+  } catch (err: any) {
+    if (err.name === "JsonWebTokenError") {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid refresh token",
+      });
+    }
+
+    console.error("Refresh token error:", err);
+    
+    // Log the error
+    await LogController.logError(
+      "auth",
+      "refresh_token",
+      err,
+      undefined,
+      ip
+    );
+
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+// Logout controller
+export const logoutUser = async (req: Request, res: Response) => {
+  const ip = getSystemIp(req);
+  const userId = (req as any).user?.user_id;
+
+  try {
+    // Get refresh token from cookie or body
+    const refreshToken = req.cookies?.refreshToken;
+
+    // If we have a refresh token, revoke it
+    if (refreshToken) {
+      const tokenHash = crypto
+        .createHash("sha256")
+        .update(refreshToken)
+        .digest("hex");
+
+      await db.execute(
+        "UPDATE refresh_tokens SET is_revoked = TRUE WHERE user_id = ? AND token_hash = ?",
+        [userId, tokenHash]
+      );
+    }
+
+    // Clear the refresh token cookie
+    res.clearCookie('refreshToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+    });
+
+    // Log the logout
+    await LogController.createLog({
+      action: "auth",
+      module: "logout",
+      userId: userId,
+      ip: ip,
+      message: "User logged out successfully"
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Logged out successfully",
+    });
+
+  } catch (err: any) {
+    console.error("Logout error:", err);
+    
+    // Log the error
+    await LogController.logError(
+      "auth",
+      "logout",
+      err,
+      userId,
+      ip
+    );
+
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
 };
